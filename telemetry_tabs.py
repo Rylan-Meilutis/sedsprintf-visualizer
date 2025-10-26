@@ -11,9 +11,9 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
 from matplotlib.ticker import ScalarFormatter
-mpl.rcParams["agg.path.chunksize"] = 10000   # improves anti-aliasing
-mpl.rcParams["figure.dpi"] = 200             # internal render quality
 mpl.rcParams["savefig.dpi"] = 300
+mpl.rcParams["agg.path.chunksize"] = 0
+
 mpl.rcParams["figure.autolayout"] = True
 import tkinter as tk
 from tkinter import ttk
