@@ -10,6 +10,7 @@ matplotlib.use("TkAgg")  # embed Matplotlib inside Tkinter
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib as mpl
+from matplotlib.ticker import ScalarFormatter
 mpl.rcParams["agg.path.chunksize"] = 10000   # improves anti-aliasing
 mpl.rcParams["figure.dpi"] = 200             # internal render quality
 mpl.rcParams["savefig.dpi"] = 300
@@ -90,12 +91,31 @@ def plot_all_indices_overlay(df: pd.DataFrame, title_suffix: str, fig: Figure):
     """
     Overlay all indices on one graph with separate y-axes (different scales),
     shared x-axis (time). Uses multiple right-side axes with offset spines.
+
+    Text/line sizes are specified in *pixels* and converted to points so they
+    remain visually constant even when DPI changes.
     """
     fig.clf()
 
+    # ---- pixel→point converter bound to this figure's effective DPI ----
+    def px2pt(px: float) -> float:
+        # points that render as 'px' pixels at current fig.dpi
+        return 72.0 * px / float(fig.dpi)
+
+    # ---- choose visual targets in pixels (tweak to taste) ----
+    TITLE_PX   = 18
+    LABEL_PX   = 12
+    TICK_PX    = 10
+    LEGEND_PX  = 10
+    ANNO_PX    = 10
+    LW_PX      = 2.0   # line width in visual pixels
+    GRID_ALPHA = 0.25
+
     if df.empty:
         ax = fig.add_subplot(1, 1, 1)
-        ax.set_title("No data")
+        ax.set_title("No data", fontsize=px2pt(TITLE_PX))
+        ax.set_xlabel("Time (s)", fontsize=px2pt(LABEL_PX))
+        ax.tick_params(axis="both", labelsize=px2pt(TICK_PX))
         fig.tight_layout()
         return
 
@@ -103,8 +123,9 @@ def plot_all_indices_overlay(df: pd.DataFrame, title_suffix: str, fig: Figure):
     n = len(indices)
 
     ax_main = fig.add_subplot(1, 1, 1)
-    ax_main.set_xlabel("Time (s)")
-    ax_main.grid(True, which="both", axis="both", linestyle="-", alpha=0.25)
+    ax_main.set_xlabel("Time (s)", fontsize=px2pt(LABEL_PX))
+    ax_main.grid(True, which="both", axis="both", linestyle="-", alpha=GRID_ALPHA)
+    ax_main.tick_params(axis="both", labelsize=px2pt(TICK_PX))
 
     lines, labels = [], []
     color_cycle = [f"C{i % 10}" for i in range(n)]
@@ -113,25 +134,50 @@ def plot_all_indices_overlay(df: pd.DataFrame, title_suffix: str, fig: Figure):
         df_idx = df[df["idx"] == idx]
         if df_idx.empty:
             return None, None
-        t = df_idx["t_plot"].values
-        v = df_idx["value"].values
-        (line,) = ax.plot(t, v, label=f"Idx {idx}", color=color, linewidth=1.5, antialiased=True)
-        ax.set_ylabel(f"Idx {idx}", color=color)
-        ax.tick_params(axis="y", colors=color)
-        # Annotate latest value
+        t = df_idx["t_plot"].to_numpy()
+        v = df_idx["value"].to_numpy()
+
+        (line,) = ax.plot(
+            t, v,
+            label=f"Idx {idx}",
+            color=color,
+            linewidth=px2pt(LW_PX),
+            antialiased=True,
+        )
+
+        ax.set_ylabel(f"Idx {idx}", color=color, fontsize=px2pt(LABEL_PX))
+        ax.tick_params(axis="y", colors=color, labelsize=px2pt(TICK_PX))
+
+        # --- NEW: make the offset text (e.g., +1.005e5) scale like ticks ---
+        fmt = ScalarFormatter(useMathText=True)
+        # tweak powerlimits if you want to control when sci/offset appears:
+        fmt.set_powerlimits((-3, 3))
+        ax.yaxis.set_major_formatter(fmt)
+        off = ax.yaxis.get_offset_text()
+        off.set_fontsize(px2pt(TICK_PX))
+        off.set_color(color)
+
+        # Optional: put the offset near the axis label instead of default spot
+        # off.set_va("baseline"); off.set_ha("left")  # adjust to taste
+
+        # Annotate latest value near last point
         lt, lv = t[-1], v[-1]
-        ax.text(lt, lv, f" {lv:.3f}", va="center", ha="left",
-                fontsize=9, color=color, fontweight="bold")
+        ax.text(
+            lt, lv, f" {lv:.3f}",
+            va="center", ha="left",
+            fontsize=px2pt(ANNO_PX), color=color, fontweight="bold",
+            clip_on=True,
+        )
         return line, f"Idx {idx}"
 
-    # First index (left y-axis)
+    # First (left) axis
     first_idx = indices[0]
     line, lab = _plot_on_axis(ax_main, first_idx, color_cycle[0])
     if line:
         lines.append(line)
         labels.append(lab)
 
-    # Additional right-side axes
+    # Additional right-side axes with offset spines
     for k, idx in enumerate(indices[1:], start=1):
         ax_k = ax_main.twinx()
         ax_k.spines["right"].set_position(("axes", 1 + 0.08 * (k - 1)))
@@ -143,26 +189,29 @@ def plot_all_indices_overlay(df: pd.DataFrame, title_suffix: str, fig: Figure):
             lines.append(line)
             labels.append(lab)
 
+    # Title and legend
     base_title = f"{df['type'].iloc[0]}" if not df.empty else "Telemetry"
     sender = df["sender"].iloc[0] if not df.empty else ""
     fig.suptitle(
         f"{base_title} {title_suffix}".strip() + (f" — {sender}" if sender else ""),
-        fontsize=11,
+        fontsize=px2pt(TITLE_PX),
         fontweight="bold",
     )
 
-    # Legend on top center
-    fig.legend(
-        lines,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.96),
-        ncol=len(labels),
-        frameon=True,
-        fontsize=9,
-    )
+    if lines:
+        leg = fig.legend(
+            lines, labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.96),
+            ncol=len(labels),
+            frameon=True,
+            fontsize=px2pt(LEGEND_PX),
+        )
+        # Legend frame line width in pixel-constant units too
+        leg.get_frame().set_linewidth(px2pt(LW_PX))
 
     fig.tight_layout(rect=[0, 0, 1, 0.94])
+
 
 
 # ---------- Tkinter App (multi-level tabs) ----------
@@ -183,13 +232,13 @@ class TelemetryTabsApp:
         # --- DPI / zoom fix: prevent Tk from scaling widgets on HiDPI (Retina) ---
         # This keeps visual size constant; DPI will now control crispness, not zoom.
         try:
-            self.root.tk.call('tk', 'scaling', 1.0)
+            self.ui_scale = float(self.root.tk.call('tk', 'scaling'))  # e.g. 2.0 on Retina
         except tk.TclError:
-            pass
+            self.ui_scale = 1.0
 
         # Optional: set global Matplotlib DPI defaults for consistency
-        matplotlib.rcParams["figure.dpi"] = self.fig_dpi
-        matplotlib.rcParams["savefig.dpi"] = max(300, self.fig_dpi)
+        # matplotlib.rcParams["figure.dpi"] = self.fig_dpi
+        # matplotlib.rcParams["savefig.dpi"] = max(300, self.fig_dpi)
 
         self.nb_types = ttk.Notebook(self.root)
         self.nb_types.pack(fill="both", expand=True)
@@ -219,18 +268,32 @@ class TelemetryTabsApp:
             for s in senders:
                 if s in self.tabs[t]["senders"]:
                     continue
-                frame_inner = ttk.Frame(nb_senders)
+
+                # Fixed pixel size for the plot area
+                PX_W, PX_H = 1280, 800
+
+                frame_inner = ttk.Frame(nb_senders, width=PX_W, height=PX_H)
+                frame_inner.pack_propagate(False)  # don't let children resize the frame
                 nb_senders.add(frame_inner, text=s)
 
-                # Keep a reasonable physical size; DPI controls sharpness, not zoom.
-                w_pixels, h_pixels = 16, 10
-                fig = Figure(dpi=100)
-                fig.set_size_inches(w_pixels, h_pixels, forward=False)
+                # --- CRITICAL: tie inches to dpi so pixels stay constant ---
+                fig = Figure(figsize=(PX_W / self.fig_dpi, PX_H / self.fig_dpi),
+                             dpi=self.fig_dpi)
 
                 canvas = FigureCanvasTkAgg(fig, master=frame_inner)
+                w = canvas.get_tk_widget()
+
+                # Fix the Tk widget to the same pixel size; do not allow expansion.
+                w.configure(width=PX_W, height=PX_H)
+                w.pack(fill="none", expand=False)
+
+                # Safety: neutralize Tk zoom for this widget too
+                try:
+                    w.tk.call("tk", "scaling", 1.0)
+                except tk.TclError:
+                    pass
+
                 canvas.draw_idle()
-                canvas.get_tk_widget().tk.call("tk", "scaling", 1.0)  # neutralize zoom
-                canvas.get_tk_widget().pack(fill="both", expand=True)
                 self.tabs[t]["senders"][s] = {"fig": fig, "canvas": canvas}
 
     def update_loop(self):
