@@ -1,4 +1,4 @@
-# Telemetry Visulizer
+# Telemetry Visualizer
 
 # Overview
 This is a set of 2 tools, the first one allows for esy capturing of the data and saving it to a db, json file, or text file, the second allows for visualization of data saved in the db.
