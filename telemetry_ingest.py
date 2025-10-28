@@ -7,7 +7,7 @@ import signal
 import sqlite3
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import List, Optional
 
 try:
@@ -130,7 +130,7 @@ def insert_packet(conn: sqlite3.Connection, pkt: dict, verbose: bool = False) ->
             pkt["sender"],
             json.dumps(pkt["endpoints"]),
             pkt["timestamp_ms"],
-            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
         ),
     )
     packet_id = cur.lastrowid
