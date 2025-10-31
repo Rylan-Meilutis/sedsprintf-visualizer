@@ -24,25 +24,27 @@ RECONNECT_DELAY_SEC = 0
 # Regex that tolerates noisy prefixes/suffixes and both "(a,b,c)" or "a, b, c"
 PACKET_RE = re.compile(
     r"""
-    (?:[A-Za-z_][\w:]*:\s*)?        # optional label like on_radio_packet:
-    \{                              
+    ^\s*
+    (?:[A-Za-z_][\w:]*:\s*)?            # optional label like on_radio_packet:
+    \{                                   # opening brace
       \s*Type:\s*(?P<type>[A-Za-z0-9_-]+)\s*,\s*
-      Size:\s*(?P<size>\d+)\s*,\s*
+      (?:(?:Data\ \s*Size)|Size):\s*(?P<size>\d+)\s*,\s*  # 'Data Size:' or 'Size:' (space escaped)
       Sender:\s*(?P<sender>[^,]+?)\s*,\s*
-      Endpoints:\s*\[(?P<endpoints>[^]]*)]\s*,\s*
+      Endpoints:\s*\[(?P<endpoints>[^\]]*)]\s*,\s*
       Timestamp:\s*(?P<ts_ms>\d+)
-      (?:\s*\((?P<ts_human>[^)]*)\))?   # optional human-readable timestamp
+      (?:\s*\((?P<ts_human>[^)]*)\))?    # optional human-readable timestamp
       \s*,\s*
-      (?:Data|Error):\s*        # Data: or Error:
+      (?:Data|Error):\s*
       (?:
-        \((?P<data_paren>.*?)\)         # data wrapped in parens
+        \((?P<data_paren>.*?)\)          # data wrapped in parens
         |
-        (?P<data_noparen>[^}]+?)        # or bare list until the close brace
+        (?P<data_noparen>[^}]+?)         # or bare list until the close brace
       )
-    }
+    \}\s*$
     """,
     re.IGNORECASE | re.VERBOSE | re.DOTALL,
 )
+
 
 # ---------------------- Database Schema ----------------------
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -228,7 +230,7 @@ def main():
                 if args.out_txt:
                     os.makedirs(os.path.dirname(os.path.abspath(args.out_txt)), exist_ok=True)
                     with open(args.out_txt, "a", encoding="utf-8") as txtf:
-                        txtf.write(f"[{datetime.utcnow().isoformat(timespec='seconds')}] ")
+                        txtf.write(f"[{datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')}] ")
                         txtf.write(f"Type={pkt['type']} Sender={pkt['sender']} ")
                         txtf.write(f"Endpoints={pkt['endpoints']} Timestamp={pkt['timestamp_ms']} ")
                         txtf.write(f"Human={pkt['timestamp_human']} Data={pkt['values']}\n")
@@ -242,7 +244,7 @@ def main():
                         "timestamp_ms": pkt["timestamp_ms"],
                         "timestamp_human": pkt["timestamp_human"],
                         "values": pkt["values"],
-                        "received_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                        "received_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S") + "Z",
                     }
                     if args.file_flag:
                         out_obj["flag"] = args.file_flag
